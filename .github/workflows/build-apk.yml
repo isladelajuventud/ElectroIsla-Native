@@ -12,21 +12,51 @@ jobs:
       - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      - name: Encontrar proyecto Android
+      - name: Encontrar y descomprimir proyecto
         shell: bash
         run: |
           set -e
 
-          echo "Buscando proyecto Android..."
+          echo "Buscando archivo ZIP del proyecto..."
 
-          PROJECT_DIR=$(find . -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1 | xargs -r dirname)
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: No se encontró settings.gradle"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No se encontró ningún archivo ZIP."
+            echo "Archivos disponibles:"
+            find . -maxdepth 3 -type f | head -100
             exit 1
           fi
 
-          echo "Proyecto encontrado en: $PROJECT_DIR"
+          echo "ZIP encontrado:"
+          echo "$ZIP_FILE"
+
+          mkdir -p proyecto
+
+          unzip -o "$ZIP_FILE" -d proyecto
+
+          echo ""
+          echo "Contenido después de descomprimir:"
+          find proyecto -maxdepth 4 -type f | head -100
+
+          echo ""
+          echo "Buscando settings.gradle..."
+
+          SETTINGS_FILE=$(find proyecto -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) | head -n 1)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: No se encontró settings.gradle dentro del ZIP."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+          echo ""
+          echo "Proyecto Android encontrado en:"
+          echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
@@ -43,17 +73,27 @@ jobs:
 
       - name: Mostrar proyecto
         run: |
-          echo "Proyecto: $PROJECT_DIR"
-          echo "Contenido:"
-          ls -la "$PROJECT_DIR"
+          echo "Proyecto:"
+          echo "$PROJECT_DIR"
+
           echo ""
-          echo "Build Gradle:"
+          echo "Contenido del proyecto:"
+          ls -la "$PROJECT_DIR"
+
+          echo ""
+          echo "Contenido de app:"
           ls -la "$PROJECT_DIR/app"
 
       - name: Preparar actualización
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           echo "Preparando proyecto ElectroIsla..."
+
+          echo ""
+          echo "Versión de Java:"
+          java -version
+
+          echo ""
           echo "Versión de Gradle:"
           gradle --version
 
@@ -65,7 +105,11 @@ jobs:
       - name: Buscar APK
         run: |
           echo "APK generados:"
-          find "$PROJECT_DIR/app/build/outputs/apk" -type f -name "*.apk" -print
+
+          find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*.apk" \
+            -print
 
       - name: Preparar firma
         env:
@@ -80,7 +124,7 @@ jobs:
 
           echo "$KEYSTORE_B64" | base64 --decode > electroisla-release.keystore
 
-          echo "Keystore preparada."
+          echo "Keystore preparada correctamente."
 
       - name: Firmar APK
         env:
@@ -89,7 +133,10 @@ jobs:
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" -type f -name "*release*.apk" | head -n 1)
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*release*.apk" \
+            | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERROR: No se encontró el APK Release."
@@ -101,7 +148,9 @@ jobs:
 
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
 
-          echo "Build Tools: $BUILD_TOOLS"
+          echo ""
+          echo "Android Build Tools:"
+          echo "$BUILD_TOOLS"
 
           "$BUILD_TOOLS/zipalign" -f 4 \
             "$APK" \
@@ -119,6 +168,7 @@ jobs:
             --verbose \
             ElectroIsla-9.9.1.apk
 
+          echo ""
           echo "APK firmado correctamente."
 
       - name: Guardar APK
