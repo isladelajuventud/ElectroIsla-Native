@@ -8,174 +8,122 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      - name: Encontrar y descomprimir proyecto
+      - name: Encontrar proyecto Android
+        shell: bash
         run: |
           set -e
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'ElectroIsla_Nativa_*.zip' | head -n 1)
+          echo "Buscando proyecto Android..."
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "No se encontró el ZIP de ElectroIsla."
+          PROJECT_DIR=$(find . -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1 | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: No se encontró settings.gradle"
             exit 1
           fi
 
-          rm -rf proyecto
-          mkdir -p proyecto
-          unzip -q "$ZIP_FILE" -d proyecto
-
-          PROJECT_DIR=$(dirname "$(find proyecto -type f -name gradlew | head -n 1)")
-
-          if [ -z "$PROJECT_DIR" ] || [ "$PROJECT_DIR" = "." ]; then
-            echo "No se encontró el proyecto Gradle."
-            find proyecto -maxdepth 4 -type f | head -100
-            exit 1
-          fi
+          echo "Proyecto encontrado en: $PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Proyecto encontrado en: $PROJECT_DIR"
 
       - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.7'
+
+      - name: Mostrar proyecto
+        run: |
+          echo "Proyecto: $PROJECT_DIR"
+          echo "Contenido:"
+          ls -la "$PROJECT_DIR"
+          echo ""
+          echo "Build Gradle:"
+          ls -la "$PROJECT_DIR/app"
 
       - name: Preparar actualización
-        env:
-          PROJECT_DIR: ${{ env.PROJECT_DIR }}
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          root = Path(os.environ["PROJECT_DIR"])
-
-          base = "https://isladelajuventud.github.io/ElectroIsla-App/"
-          new_url = base + "?app_version=9.8.0"
-
-          for p in root.rglob("*"):
-              if not p.is_file():
-                  continue
-
-              if p.suffix.lower() not in {
-                  ".xml",
-                  ".gradle",
-                  ".kts",
-                  ".json",
-                  ".txt"
-              }:
-                  continue
-
-              try:
-                  s = p.read_text(encoding="utf-8")
-              except Exception:
-                  continue
-
-              old = s
-
-              s = s.replace(base, new_url)
-              s = s.replace(base.rstrip("/"), new_url)
-
-              if s != old:
-                  p.write_text(s, encoding="utf-8")
-
-          gradle_files = list((root / "app").glob("build.gradle*"))
-
-          if not gradle_files:
-              raise SystemExit(
-                  "No se encontró app/build.gradle o app/build.gradle.kts"
-              )
-
-          p = gradle_files[0]
-          s = p.read_text(encoding="utf-8")
-
-          m = re.search(
-              r"versionCode\s*(?:=)?\s*(\d+)",
-              s
-          )
-
-          if not m:
-              raise SystemExit(
-                  "No se encontró un versionCode numérico."
-              )
-
-          old_code = int(m.group(1))
-          new_code = old_code + 1
-
-          s = (
-              s[:m.start(1)]
-              + str(new_code)
-              + s[m.end(1):]
-          )
-
-          s = re.sub(
-              r'versionName\s*(?:=)?\s*["\'][^"\']+["\']',
-              'versionName = "9.8.0"',
-              s,
-              count=1
-          )
-
-          p.write_text(s, encoding="utf-8")
-
-          print(f"versionCode: {old_code} -> {new_code}")
-          print("versionName: 9.8.0")
-          PY
+          echo "Preparando proyecto ElectroIsla..."
+          echo "Versión de Gradle:"
+          gradle --version
 
       - name: Compilar APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon
+          gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Buscar APK
+        run: |
+          echo "APK generados:"
+          find "$PROJECT_DIR/app/build/outputs/apk" -type f -name "*.apk" -print
 
       - name: Preparar firma
         env:
           KEYSTORE_B64: ${{ secrets.ELECTROISLA_KEYSTORE_B64 }}
         run: |
+          set -e
+
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ERROR: Falta el Secret ELECTROISLA_KEYSTORE_B64"
+            exit 1
+          fi
+
           echo "$KEYSTORE_B64" | base64 --decode > electroisla-release.keystore
-          test -s electroisla-release.keystore
+
+          echo "Keystore preparada."
 
       - name: Firmar APK
         env:
           STORE_PASSWORD: ${{ secrets.ELECTROISLA_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ELECTROISLA_KEY_PASSWORD }}
         run: |
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk/release" \
-            -type f -name '*.apk' | head -n 1)
+          set -e
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" -type f -name "*release*.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "No se encontró el APK compilado."
+            echo "ERROR: No se encontró el APK Release."
             exit 1
           fi
 
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
-            -type f -name apksigner | sort -V | tail -n 1)
+          echo "APK encontrado:"
+          echo "$APK"
 
-          if [ -z "$APKSIGNER" ]; then
-            echo "No se encontró apksigner."
-            exit 1
-          fi
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
 
-          "$APKSIGNER" sign \
+          echo "Build Tools: $BUILD_TOOLS"
+
+          "$BUILD_TOOLS/zipalign" -f 4 \
+            "$APK" \
+            ElectroIsla-9.9.1-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" sign \
             --ks electroisla-release.keystore \
             --ks-key-alias my-key-alias \
             --ks-pass pass:"$STORE_PASSWORD" \
             --key-pass pass:"$KEY_PASSWORD" \
-            --out ElectroIsla-9.8.0.apk \
-            "$APK"
+            --out ElectroIsla-9.9.1.apk \
+            ElectroIsla-9.9.1-aligned.apk
 
-          "$APKSIGNER" verify --verbose ElectroIsla-9.8.0.apk
+          "$BUILD_TOOLS/apksigner" verify \
+            --verbose \
+            ElectroIsla-9.9.1.apk
+
+          echo "APK firmado correctamente."
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: ElectroIsla-9.8.0
-          path: ElectroIsla-9.8.0.apk
+          name: ElectroIsla-9.9.1
+          path: ElectroIsla-9.9.1.apk
+          if-no-files-found: error
