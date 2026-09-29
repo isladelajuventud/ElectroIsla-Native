@@ -1,0 +1,61 @@
+name: Construir APK ElectroIsla
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Descomprimir proyecto
+        run: |
+          unzip -q ElectroIsla_Nativa_v9_9_1_Proyecto.zip -d proyecto
+          echo "Proyecto descomprimido:"
+          ls -la proyecto/ElectroIsla-Native
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Compilar APK
+        working-directory: proyecto/ElectroIsla-Native
+        run: |
+          gradle :app:assembleRelease --no-daemon
+
+      - name: Preparar firma
+        env:
+          KEYSTORE_B64: ${{ secrets.ELECTROISLA_KEYSTORE_B64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 --decode > electroisla-release.keystore
+
+      - name: Firmar APK
+        env:
+          STORE_PASSWORD: ${{ secrets.ELECTROISLA_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ELECTROISLA_KEY_PASSWORD }}
+        run: |
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+            --ks electroisla-release.keystore \
+            --ks-key-alias my-key-alias \
+            --ks-pass pass:"$STORE_PASSWORD" \
+            --key-pass pass:"$KEY_PASSWORD" \
+            --out ElectroIsla-9.9.1.apk \
+            proyecto/ElectroIsla-Native/app/build/outputs/apk/release/app-release-unsigned.apk
+
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose ElectroIsla-9.9.1.apk
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ElectroIsla-9.9.1
+          path: ElectroIsla-9.9.1.apk
