@@ -16,6 +16,19 @@ jobs:
         shell: bash
         run: |
           set -e
+          echo "Comprobando credenciales de firma..."
+
+if [ -z "$STORE_PASSWORD" ]; then
+  echo "ERROR: La contraseña del keystore llegó vacía."
+  exit 1
+fi
+
+if [ -z "$KEY_PASSWORD" ]; then
+  echo "ERROR: La contraseña de la clave llegó vacía."
+  exit 1
+fi
+
+echo "Las dos contraseñas llegaron correctamente."
 
           echo "Buscando archivo ZIP del proyecto..."
 
