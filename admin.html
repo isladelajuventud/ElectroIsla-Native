@@ -8,6 +8,8 @@
 .photo-btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
 .photo-btn input{display:none}.photo-preview img{width:120px;height:120px;object-fit:cover;border-radius:12px;margin-top:10px}
 .photo-status{display:block;margin-top:7px;font-size:.85rem;color:#5b6670}
+
+.category-form{display:grid;gap:12px;margin-bottom:16px}.category-list{display:grid;gap:8px}.category-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid #e1e6eb;border-radius:14px;background:#f8fbff}.category-row.disabled{opacity:.7}.category-row small{display:block;color:#667085;margin-top:3px}.categories-card{margin-bottom:18px}.category-row .admin-actions{display:flex;gap:6px}.category-row .admin-actions button{min-width:40px}
 </style>
 </head>
 <body class="admin-page">
@@ -35,11 +37,23 @@
 <div class="row settings-actions"><button type="button" class="btn primary" id="saveSettings">💾 Guardar configuración</button><span id="settingsStatus" class="settings-status">☁️ Cargando configuración…</span></div>
 </section>
 
+<section class="admin-card categories-card">
+<h2>🏷️ Categorías</h2>
+<p class="settings-help">Agrega, edita, oculta o elimina categorías. Al renombrar una categoría, sus productos se actualizan automáticamente.</p>
+<form id="categoryForm" class="category-form">
+<input type="hidden" id="categoryId">
+<label>Nombre de la categoría<input id="categoryName" required placeholder="Ej. COMBOS"></label>
+<label class="check"><input type="checkbox" id="categoryAvailable" checked> Visible en la tienda</label>
+<div class="row"><button class="btn primary" type="submit">💾 Guardar categoría</button><button class="btn secondary" type="button" id="cancelCategory">Limpiar</button></div>
+</form>
+<div id="categoryList" class="category-list"></div>
+</section>
+
 <div class="admin-grid">
 <form id="productForm" class="admin-card">
 <input type="hidden" id="editId"><h2 id="formTitle">➕ Agregar producto</h2>
 <label>Nombre<input required id="pName" placeholder="Ej. Carne de cerdo"></label>
-<label>Categoría<select id="pCategory"><option>Alimentos</option><option>Electrodomésticos</option></select></label>
+<label>Categoría<select id="pCategory" required></select></label>
 <div class="price-fields">
 <label>Moneda<select id="pCurrency"><option value="USD">USD — Dólar estadounidense</option><option value="CUP">CUP — Peso cubano</option><option value="EUR">EUR — Euro</option></select></label>
 <label>Precio<input required type="number" min="0" step="0.01" id="pPrice" placeholder="0.00"></label>
@@ -111,6 +125,6 @@
 <div class="admin-card"><h2>📦 Catálogo actual</h2><p id="cloudStatus" style="font-size:.9rem;color:#5b6670;margin-top:-6px;margin-bottom:12px">☁️ Esperando conexión…</p><button type="button" class="btn secondary" id="refreshCloud" style="margin-bottom:12px">🔄 Actualizar catálogo</button><div id="adminProducts"></div></div>
 </div></section></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-config.js?v=2"></script>
-<script src="admin.js?v=9"></script>
+<script src="supabase-config.js?v=3"></script>
+<script src="admin.js?v=10"></script>
 </body></html>

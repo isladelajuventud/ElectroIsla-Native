@@ -1,16 +1,8 @@
 // ElectroIsla 9.8.1
 const WHATSAPP="5352017110";
-const defaultProducts=[
-{id:"a1",name:"Carne de cerdo",category:"Alimentos",price:12.5,currency:"USD",discountPrice:null,unit:"kg",image:"",description:"Carne de cerdo.",available:true},
-{id:"a2",name:"Aceite",category:"Alimentos",price:8,currency:"USD",discountPrice:null,unit:"botella",image:"",description:"Aceite para cocina.",available:true},
-{id:"a3",name:"Pescado",category:"Alimentos",price:10,currency:"USD",discountPrice:null,unit:"kg",image:"",description:"Pescado.",available:true},
-{id:"a4",name:"Combo de alimentos",category:"Alimentos",price:35,currency:"USD",discountPrice:null,unit:"combo",image:"",description:"Combo promocional.",available:true},
-{id:"e1",name:"Split",category:"Electrodomésticos",price:270,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Aire acondicionado Split.",available:true},
-{id:"e2",name:"Ventilador recargable",category:"Electrodomésticos",price:65,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Ventilador recargable.",available:true},
-{id:"e3",name:"Lavadora",category:"Electrodomésticos",price:320,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Lavadora.",available:true},
-{id:"e4",name:"Cocina",category:"Electrodomésticos",price:180,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Cocina doméstica.",available:true}
-];
+const defaultProducts=[];
 let products=JSON.parse(localStorage.getItem("electroisla_products")||"null")||defaultProducts;
+let categories=[];
 let cart=JSON.parse(localStorage.getItem("electroisla_cart")||"[]");
 let storeSettings={usd_to_cup:700,transfer_markup_percent:0};
 const currencySymbols={USD:"$",CUP:"$",EUR:"€"};
@@ -110,8 +102,23 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 async function loadStoreSettings(){const {data,error}=await supabaseClient.from("store_settings").select("usd_to_cup,transfer_markup_percent").eq("id",1).maybeSingle();if(error)throw error;if(data){storeSettings={usd_to_cup:Number(data.usd_to_cup)||0,transfer_markup_percent:Number(data.transfer_markup_percent)||0}}}
 function save(){localStorage.setItem("electroisla_products",JSON.stringify(products));localStorage.setItem("electroisla_cart",JSON.stringify(cart))}
 function fromRow(r){return{id:String(r.id),name:r.name||"",category:r.category||"Alimentos",price:Number(r.price)||0,currency:r.currency||"USD",discountPrice:r.discount_price===null||r.discount_price===undefined||Number(r.discount_price)<=0?null:Number(r.discount_price),unit:r.unit||"",image:r.image||"",description:r.description||"",available:r.available!==false}}
+
+async function loadCloudCategories(){
+ const {data,error}=await supabaseClient.from("categories").select("id,name,sort_order,available").eq("available",true).order("sort_order",{ascending:true}).order("name",{ascending:true});
+ if(error)throw error;
+ categories=data||[];
+ renderCategoryTabs();
+ return categories;
+}
+function renderCategoryTabs(){
+ const box=document.getElementById("categoryTabs"); if(!box)return;
+ const names=["Todos",...categories.map(c=>c.name)];
+ const wanted=names.includes(currentFilter)?currentFilter:"Todos"; currentFilter=wanted;
+ box.innerHTML=names.map((name,i)=>`<button class="filter ${name===wanted?"active":""}" data-filter="${esc(name)}">${esc(name==="Todos"?"Ofertas":name)}</button>`).join("");
+ box.querySelectorAll(".filter").forEach(b=>b.addEventListener("click",()=>{const f=b.dataset.filter;currentFilter=f;box.querySelectorAll(".filter").forEach(x=>x.classList.toggle("active",x.dataset.filter===f));b.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});render(f)}));
+}
 async function loadCloudProducts(){const {data,error}=await supabaseClient.from("products").select("*").order("created_at",{ascending:true});if(error)throw error;if(data&&data.length){products=data.map(fromRow);save();return true}return false}
-async function startCloud(){try{await loadStoreSettings();await loadCloudProducts();render();renderCart()}catch(err){console.warn("Supabase no disponible; usando catálogo local.",err);render();renderCart()}}
+async function startCloud(){try{await loadStoreSettings();await loadCloudCategories();await loadCloudProducts();render();renderCart()}catch(err){console.warn("Supabase no disponible; usando catálogo local.",err);render();renderCart()}}
 let currentFilter="Todos";
 function updateStickyOrder(){const bar=document.getElementById("stickyOrder");if(!bar)return;const count=cart.reduce((s,i)=>s+i.qty,0);let total=0;cart.forEach(i=>{const p=products.find(x=>x.id===i.id);if(p)total+=effectivePrice(p)*i.qty});bar.classList.toggle("visible",count>0);const c=bar.querySelector("[data-sticky-count]");const t=bar.querySelector("[data-sticky-total]");if(c)c.textContent=`${count} producto${count===1?"":"s"}`;if(t)t.textContent=money(total,"USD")}
 function render(filter="Todos"){const box=document.getElementById("products");if(!box)return;const q=(document.getElementById("productSearch")?.value||"").trim().toLowerCase();const list=products.filter(p=>p.available&&(filter==="Todos"||p.category===filter)&&(!q||`${p.name} ${p.description||""}`.toLowerCase().includes(q)));const count=document.getElementById("resultCount");if(count)count.textContent=`${list.length} producto${list.length===1?"":"s"}`;box.innerHTML=list.map(p=>{const qty=cart.find(i=>i.id===p.id)?.qty||0;return `<article class="product shop-product"><div class="product-info"><span class="tag">${esc(p.category)}</span><h3>${esc(p.name)}</h3><p>${esc(p.description||"")}</p><div class="price">${priceMarkup(p)} <small>${esc(p.unit||"")}</small></div></div><div class="product-media"><div class="product-img">${p.image?`<img src="${p.image}" alt="${esc(p.name)}">`:(p.category==="Alimentos"?"🥩":"🏠")}</div><button class="add-circle" onclick="add('${esc(p.id)}')" aria-label="Agregar ${esc(p.name)}">${qty>0?qty:"+"}</button></div></article>`}).join("")||'<p class="empty-products">No hay productos disponibles.</p>';updateStickyOrder()}
@@ -210,7 +217,6 @@ function renderCartRecommendations(){
 function removeFromCart(id){cart=cart.filter(i=>i.id!==String(id));save();renderCart();render();}
 
 function openCart(){document.getElementById("cart").classList.add("open");document.getElementById("cartOverlay").classList.remove("hidden")}function closeCart(){document.getElementById("cart").classList.remove("open");document.getElementById("cartOverlay").classList.add("hidden")}function openCheckout(){if(!cart.length){alert("Agrega al menos un producto.");return}updatePaymentSummary();document.getElementById("checkoutModal").classList.remove("hidden")}
-document.querySelectorAll(".filter").forEach(b=>b.addEventListener("click",()=>{const f=b.dataset.filter;currentFilter=f;document.querySelectorAll(".filter").forEach(x=>x.classList.toggle("active",x.dataset.filter===f));b.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});render(f)}));
 document.getElementById("shopSearchBtn")?.addEventListener("click",()=>{const w=document.getElementById("searchWrap");w.classList.toggle("hidden");if(!w.classList.contains("hidden"))document.getElementById("productSearch")?.focus()});
 document.getElementById("shopMenuBtn")?.addEventListener("click",()=>document.getElementById("categoryTabs")?.scrollIntoView({behavior:"smooth",inline:"center"}));
 document.getElementById("productSearch")?.addEventListener("input",()=>render(currentFilter));
@@ -265,4 +271,4 @@ document.getElementById("otherZone")?.addEventListener("input",updatePaymentSumm
 
 setupDeliveryPicker();render();renderCart();startCloud();
 supabaseClient.channel("settings-store").on("postgres_changes",{event:"*",schema:"public",table:"store_settings"},async()=>{try{await loadStoreSettings();render();renderCart()}catch(e){console.warn(e)}}).subscribe();
-supabaseClient.channel("products-store").on("postgres_changes",{event:"*",schema:"public",table:"products"},async()=>{try{await loadCloudProducts();render();renderCart()}catch(e){console.warn(e)}}).subscribe();
+supabaseClient.channel("products-store").on("postgres_changes",{event:"*",schema:"public",table:"products"},async()=>{try{await loadCloudCategories();await loadCloudProducts();render();renderCart()}catch(e){console.warn(e)}}).subscribe();

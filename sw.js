@@ -1,9 +1,9 @@
-const CACHE_NAME = 'electroisla-v9.8.0';
+const CACHE_NAME = 'electroisla-v9.8.2';
 const CORE = [
-  './?app_version=9.8.0',
+  './?app_version=9.8.2',
   './index.html',
-  './styles.css?v=9.8.0',
-  './app.js?v=16',
+  './styles.css?v=9.8.2',
+  './app.js?v=18',
   './supabase-config.js?v=4'
 ];
 

@@ -1,4 +1,4 @@
 ElectroIsla 360
-Version: 9.8.2
-Base: v9.8.1 Agradecimiento Compra
-Cambio: Administración de categorías
+Versión: 9.8.2
+Incluye administración de categorías y catálogo dinámico desde Supabase.
+No repuebla productos de prueba cuando Supabase está vacío.

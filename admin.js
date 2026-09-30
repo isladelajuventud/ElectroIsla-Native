@@ -1,13 +1,4 @@
-const defaultProducts=[
-{id:"a1",name:"Carne de cerdo",category:"Alimentos",price:12.5,currency:"USD",discountPrice:null,unit:"kg",image:"",description:"Carne de cerdo.",available:true},
-{id:"a2",name:"Aceite",category:"Alimentos",price:8,currency:"USD",discountPrice:null,unit:"botella",image:"",description:"Aceite para cocina.",available:true},
-{id:"a3",name:"Pescado",category:"Alimentos",price:10,currency:"USD",discountPrice:null,unit:"kg",image:"",description:"Pescado.",available:true},
-{id:"a4",name:"Combo de alimentos",category:"Alimentos",price:35,currency:"USD",discountPrice:null,unit:"combo",image:"",description:"Combo promocional.",available:true},
-{id:"e1",name:"Split",category:"Electrodomésticos",price:270,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Aire acondicionado Split.",available:true},
-{id:"e2",name:"Ventilador recargable",category:"Electrodomésticos",price:65,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Ventilador recargable.",available:true},
-{id:"e3",name:"Lavadora",category:"Electrodomésticos",price:320,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Lavadora.",available:true},
-{id:"e4",name:"Cocina",category:"Electrodomésticos",price:180,currency:"USD",discountPrice:null,unit:"unidad",image:"",description:"Cocina doméstica.",available:true}
-];
+const defaultProducts=[];
 let products=JSON.parse(localStorage.getItem("electroisla_products")||"null")||defaultProducts;
 let storeSettings={usd_to_cup:700,transfer_markup_percent:0};
 const saveLocal=()=>localStorage.setItem("electroisla_products",JSON.stringify(products));
@@ -102,6 +93,7 @@ async function show(){
  if(status) status.textContent="☁️ Conectando con Supabase…";
  try{
    await loadSettings();
+   await loadCategories();
    const source=await loadCloud();
    render();
    if(status) status.textContent=source==="cloud"?`☁️ Sincronizado con Supabase · ${products.length} productos`:source==="migrated"?`☁️ Catálogo local enviado a Supabase · ${products.length} productos`:"☁️ Supabase conectado · catálogo vacío";
@@ -112,6 +104,72 @@ async function show(){
    alert("No se pudo cargar el catálogo de Supabase.\n\n"+(err.message||err));
  }
 }
+
+let categories=[];
+async function loadCategories(){
+ const {data,error}=await supabaseClient.from("categories").select("id,name,sort_order,available,created_at,updated_at").order("sort_order",{ascending:true}).order("name",{ascending:true});
+ if(error) throw error;
+ categories=data||[];
+ renderCategories();
+ populateProductCategories();
+ return categories;
+}
+function populateProductCategories(selected){
+ const sel=document.getElementById("pCategory"); if(!sel)return;
+ const current=selected!==undefined?selected:sel.value;
+ sel.innerHTML=categories.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}${c.available?"":" (Oculta)"}</option>`).join("");
+ if(current && categories.some(c=>c.name===current)) sel.value=current;
+ else if(categories.length) sel.value=categories[0].name;
+}
+function renderCategories(){
+ const box=document.getElementById("categoryList"); if(!box)return;
+ if(!categories.length){box.innerHTML='<p>No hay categorías. Agrega la primera.</p>';return;}
+ box.innerHTML=categories.map(c=>`<div class="category-row ${c.available?"":"disabled"}">
+   <div><strong>${esc(c.name)}</strong><small>${c.available?"Visible en la tienda":"Oculta"}</small></div>
+   <div class="admin-actions"><button type="button" onclick="editCategory('${esc(c.id)}')">✏️</button><button type="button" onclick="toggleCategory('${esc(c.id)}')">${c.available?"🙈":"👁️"}</button><button type="button" onclick="removeCategory('${esc(c.id)}')">🗑️</button></div>
+ </div>`).join("");
+}
+function editCategory(id){
+ const c=categories.find(x=>String(x.id)===String(id)); if(!c)return;
+ document.getElementById("categoryId").value=c.id;
+ document.getElementById("categoryName").value=c.name;
+ document.getElementById("categoryAvailable").checked=c.available!==false;
+ document.getElementById("categoryName").focus();
+}
+function resetCategory(){document.getElementById("categoryForm")?.reset();document.getElementById("categoryId").value="";document.getElementById("categoryAvailable").checked=true;}
+async function saveCategory(e){
+ e.preventDefault();
+ const id=document.getElementById("categoryId").value;
+ const name=document.getElementById("categoryName").value.trim();
+ const available=document.getElementById("categoryAvailable").checked;
+ if(!name){alert("Escribe el nombre de la categoría.");return;}
+ if(categories.some(c=>c.name.toLowerCase()===name.toLowerCase() && String(c.id)!==String(id))){alert("Ya existe una categoría con ese nombre.");return;}
+ try{
+   if(id){
+     const old=categories.find(c=>String(c.id)===String(id));
+     const {error}=await supabaseClient.from("categories").update({name,available,updated_at:new Date().toISOString()}).eq("id",id); if(error)throw error;
+     if(old && old.name!==name){
+       const {error:pe}=await supabaseClient.from("products").update({category:name}).eq("category",old.name); if(pe)throw pe;
+     }
+   }else{
+     const max=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
+     const {error}=await supabaseClient.from("categories").insert({name,sort_order:max+1,available}); if(error)throw error;
+   }
+   await loadCategories(); await loadCloud(); render(); resetCategory();
+   document.getElementById("cloudStatus").textContent=`☁️ Sincronizado con Supabase · ${products.length} productos`;
+ }catch(err){alert("No se pudo guardar la categoría.\n\n"+(err.message||err));}
+}
+async function toggleCategory(id){
+ const c=categories.find(x=>String(x.id)===String(id)); if(!c)return;
+ try{const {error}=await supabaseClient.from("categories").update({available:!c.available,updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;await loadCategories();}catch(err){alert("No se pudo cambiar la visibilidad.\n\n"+(err.message||err));}
+}
+async function removeCategory(id){
+ const c=categories.find(x=>String(x.id)===String(id)); if(!c)return;
+ const used=products.filter(p=>p.category===c.name).length;
+ if(used){alert(`No se puede eliminar «${c.name}» porque tiene ${used} producto${used===1?"":"s"} asociado${used===1?"":"s"}. Puedes ocultarla.`);return;}
+ if(!confirm(`¿Eliminar la categoría «${c.name}»?`))return;
+ try{const {error}=await supabaseClient.from("categories").delete().eq("id",id);if(error)throw error;await loadCategories();}catch(err){alert("No se pudo eliminar la categoría.\n\n"+(err.message||err));}
+}
 function render(){
  const box=document.getElementById("adminProducts");
  box.innerHTML=products.length?products.map(p=>`<div class="admin-product ${p.available?"":"disabled"}"><div>${p.image?`<img src="${esc(p.image)}" alt="">`:"📦"}</div><div><h4>${esc(p.name)}</h4><small>${esc(p.category)} · ${priceHtml(p)} · ${esc(p.unit||"")} · ${p.available?"Disponible":"Oculto"}</small></div><div class="admin-actions"><button onclick="edit('${esc(p.id)}')">✏️</button><button onclick="toggle('${esc(p.id)}')">👁️</button><button onclick="removeP('${esc(p.id)}')">🗑️</button></div></div>`).join(""):"<p>No hay productos. Agrega el primero.</p>";
@@ -119,7 +177,7 @@ function render(){
 function edit(id){
  const p=products.find(x=>x.id===id);if(!p)return;
  document.getElementById("editId").value=p.id;document.getElementById("pName").value=p.name;
- document.getElementById("pCategory").value=p.category;document.getElementById("pPrice").value=p.price;document.getElementById("pCurrency").value=p.currency||"USD";document.getElementById("pDiscountPrice").value=p.discountPrice??"";
+ populateProductCategories(p.category);document.getElementById("pCategory").value=p.category;document.getElementById("pPrice").value=p.price;document.getElementById("pCurrency").value=p.currency||"USD";document.getElementById("pDiscountPrice").value=p.discountPrice??"";
  const unitOptions=[...document.getElementById("pUnit").options].map(o=>o.value);
  if(unitOptions.includes(p.unit||"")){document.getElementById("pUnit").value=p.unit||"";document.getElementById("pUnitCustom").value="";document.getElementById("pUnitCustom").style.display="none";}
  else{document.getElementById("pUnit").value="__otra__";document.getElementById("pUnitCustom").value=p.unit||"";document.getElementById("pUnitCustom").style.display="block";}
@@ -169,11 +227,13 @@ document.getElementById("productForm").addEventListener("submit",async e=>{
 function reset(){document.getElementById("productForm").reset();document.getElementById("editId").value="";document.getElementById("pImage").value="";document.getElementById("formTitle").textContent="➕ Agregar producto";document.getElementById("pAvailable").checked=true;document.getElementById("pCurrency").value="USD";document.getElementById("pDiscountPrice").value="";document.getElementById("pUnitCustom").value="";document.getElementById("pUnitCustom").style.display="none";showPreview("")}
 document.getElementById("cancelEdit").onclick=reset;
 document.getElementById("saveSettings").onclick=saveSettings;
+document.getElementById("categoryForm")?.addEventListener("submit",saveCategory);
+document.getElementById("cancelCategory")?.addEventListener("click",resetCategory);
 document.getElementById("loginBtn").onclick=login;
 document.getElementById("refreshCloud").onclick=async()=>{
  const status=document.getElementById("cloudStatus");
  if(status)status.textContent="☁️ Actualizando…";
- try{await loadSettings();const source=await loadCloud();render();if(status)status.textContent=`☁️ ${source==="cloud"?"Sincronizado con Supabase":"Catálogo actualizado"} · ${products.length} productos`;}
+ try{await loadSettings();await loadCategories();const source=await loadCloud();render();if(status)status.textContent=`☁️ ${source==="cloud"?"Sincronizado con Supabase":"Catálogo actualizado"} · ${products.length} productos`;}
  catch(err){if(status)status.textContent="⚠️ "+(err.message||err);alert("No se pudo actualizar el catálogo.\n\n"+(err.message||err));}
 };
 document.getElementById("logoutBtn").onclick=async()=>{await supabaseClient.auth.signOut();location.reload()};
