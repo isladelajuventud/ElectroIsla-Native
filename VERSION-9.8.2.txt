@@ -1,0 +1,4 @@
+ElectroIsla 360
+Version: 9.8.2
+Base: v9.8.1 Agradecimiento Compra
+Cambio: Administración de categorías
